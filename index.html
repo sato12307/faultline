@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FaultLine — fork a beat</title>
+<style>
+  :root{
+    --bg:#0f1320; --panel:#141a2b; --panel2:#1b2030; --line:#28324a;
+    --text:#e4e8f5; --dim:#9aa2b4; --accent:#ff5d8f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:"Segoe UI","Meiryo",system-ui,sans-serif;}
+  .wrap{max-width:900px;margin:0 auto;padding:18px 16px 70px}
+  h1{font-size:24px;margin:0 0 2px}
+  .tag{color:var(--accent);font-weight:bold}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 14px;line-height:1.5}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+  input,button,select{font:inherit}
+  input[type=text]{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+        border-radius:7px;padding:6px 9px}
+  input[type=number]{width:64px;background:var(--panel2);border:1px solid var(--line);
+        color:var(--text);border-radius:7px;padding:6px 8px}
+  select{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+        border-radius:6px;padding:4px 6px}
+  button{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+        border-radius:7px;padding:8px 12px;cursor:pointer}
+  button:hover{border-color:#46506e}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#1a0a12;font-weight:bold}
+  button.ghost{background:transparent}
+  button.sel{border-color:var(--accent);color:var(--accent)}
+  .lineage{font-size:13px;color:var(--dim);margin:4px 0 10px;line-height:1.5}
+  .depth{display:inline-block;background:var(--panel2);border:1px solid var(--line);
+        border-radius:20px;padding:2px 10px;font-size:12px;color:var(--accent)}
+  #rack{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;background:var(--panel);
+        border:1px solid var(--line);border-radius:10px;padding:10px}
+  .laneSel{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--dim)}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+  #grid{display:flex;flex-direction:column;gap:6px;margin:12px 0;
+        background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .barRow{display:flex;flex-direction:column;gap:3px;border-left:3px solid transparent;
+        padding-left:8px}
+  .barRow.changed{border-left-color:var(--accent)}
+  .barLabel{font-size:11px;color:var(--dim);margin-bottom:2px}
+  .barLabel .chg{color:var(--accent)}
+  .lane{display:grid;grid-template-columns:repeat(16,1fr);gap:3px}
+  .cell{aspect-ratio:1/1.5;background:var(--panel2);border-radius:3px;cursor:pointer;
+        transition:transform .03s}
+  .cell:active{transform:scale(.9)}
+  .cell.beat{outline:1px solid #2b3650}
+  .cell.acc{background:var(--accent)!important}
+  .cell.play{box-shadow:0 0 0 2px #fff inset}
+  .msg{font-size:13px;min-height:18px;margin:6px 0}
+  .msg.ok{color:#2dc4bc} .msg.no{color:var(--accent)}
+  .hint{font-size:12px;color:var(--dim);line-height:1.6;margin-top:18px;
+        border-top:1px solid var(--line);padding-top:14px}
+  canvas{max-width:100%;border-radius:10px;margin-top:10px;display:none}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Fault<span class="tag">Line</span> <span style="font-size:14px;color:var(--dim)">— fork a beat</span></h1>
+  <p class="sub">他人のビートを<b>1小節だけ</b>改変して投稿＝フォーク。改変が枝分かれして育つ。<br>
+     マスをクリックでON/OFF・各レーンの音色は上で変更可・▶で試聴・「フォークリンクをコピー」で次の人へ。</p>
+
+  <div id="parentInfo" class="lineage"></div>
+
+  <div class="bar">
+    <input type="text" id="author" placeholder="あなたの名前 (例: kaihatsu)" size="16">
+    <input type="text" id="title" placeholder="タイトル" size="16">
+    BPM <input type="number" id="bpm" min="40" max="240" value="100">
+    <span id="barsCtl" class="bar" style="margin:0;gap:4px">小節
+      <button class="ghost" data-bars="2">2</button>
+      <button class="ghost" data-bars="4">4</button>
+      <button class="ghost" data-bars="8">8</button>
+    </span>
+  </div>
+
+  <div id="rack"></div>
+
+  <div class="bar">
+    <button id="play" class="primary">▶ play</button>
+    <button id="stop">■ stop</button>
+    <button id="clearAll" class="ghost">clear all</button>
+    <span style="flex:1"></span>
+    <button id="seedA" class="ghost">preset: Pulse</button>
+    <button id="seedB" class="ghost">preset: Paper</button>
+    <button id="rand" class="ghost">🎲 random</button>
+  </div>
+
+  <div id="grid"></div>
+  <div id="msg" class="msg"></div>
+
+  <div class="bar">
+    <button id="copyLink" class="primary">🔗 フォークリンクをコピー</button>
+    <button id="card">🖼 カード画像を保存(PNG)</button>
+  </div>
+  <canvas id="cv" width="760" height="338"></canvas>
+
+  <div class="hint">
+    <b>サーバー不要のしくみ</b>：このページはHTML1枚。譜面データ（タップ＋音色＋小節数）はURL(#以降)に丸ごと入るので、
+    リンクを送るだけでフォークの連鎖がつながります（DB・WordPress・レンタルサーバー不要）。<br>
+    GitHub Pages / Cloudflare Pages / itch.io 等に無料で置けます。カードや共有リンクのドメインは設置先に自動追従。
+  </div>
+</div>
+
+<script>
+const STEPS=16, LANES=6;
+// 改変できる小節は全体の60%まで（派生＝1小節中心、別作品化を防ぐ）
+const MAX_CHANGED_RATIO=0.6;
+const LANE_COLORS=['#3a86ff','#56cfe1','#80ed99','#ffd166','#ef8354','#9b8cff','#2dc4bc','#c0c6d4'];
+
+// ---------- 音色パレット（Web Audio・素材ファイル不要） ----------
+let actx=null;
+function ac(){ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); return actx; }
+function env(g,t,a,d,peak){ g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(peak,t+a);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+a+d); }
+function noiseBuf(dur){ const c=ac(),n=Math.floor(c.sampleRate*dur),b=c.createBuffer(1,n,c.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=Math.random()*2-1; return b; }
+function tone(t,f0,f1,dur,peak,type){ const c=ac(),o=c.createOscillator(),g=c.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(f1,t+dur*0.9);
+  env(g,t,0.001,dur,peak); o.connect(g).connect(c.destination); o.start(t); o.stop(t+dur+0.02); }
+function noise(t,type,freq,dur,peak){ const c=ac(),s=c.createBufferSource(); s.buffer=noiseBuf(dur);
+  const f=c.createBiquadFilter(); f.type=type; f.frequency.value=freq;
+  const g=c.createGain(); env(g,t,0.001,dur,peak); s.connect(f).connect(g).connect(c.destination); s.start(t); s.stop(t+dur+0.02); }
+
+const I_KICK=(t)=>tone(t,150,45,0.18,0.9,'sine');
+const I_SUB =(t)=>tone(t,90,32,0.34,0.9,'sine');
+const I_SNARE=(t)=>{ tone(t,330,180,0.12,0.25,'triangle'); noise(t,'bandpass',1800,0.16,0.5); };
+const I_CLAP=(t)=>noise(t,'bandpass',1200,0.12,0.45);
+const I_CHAT=(t)=>noise(t,'highpass',8000,0.035,0.35);
+const I_OHAT=(t)=>noise(t,'highpass',7000,0.18,0.28);
+const I_TOM =(t)=>tone(t,200,90,0.22,0.6,'sine');
+const I_RIM =(t)=>noise(t,'bandpass',2400,0.03,0.5);
+const INSTR=[I_KICK,I_SUB,I_SNARE,I_CLAP,I_CHAT,I_OHAT,I_TOM,I_RIM];
+const INAMES=['kick','sub','snare','clap','c-hat','o-hat','tom','rim'];
+const DEFAULT_KIT=[4,5,3,2,6,0];  // lane0..5 → c-hat,o-hat,clap,snare,tom,kick
+
+// ---------- chart helpers ----------
+const newGrid=(bars)=>Array.from({length:bars},()=>Array.from({length:LANES},()=>Array(STEPS).fill(0)));
+const cloneGrid=(g)=>g.map(b=>b.map(l=>l.slice()));
+function packBar(bar){return bar.map(lane=>lane.reduce((a,b,i)=>a|(b<<i),0));}
+function unpackBar(ints){return ints.map(v=>Array.from({length:STEPS},(_,i)=>(v>>i)&1));}
+const packGrid=(g)=>g.map(packBar), unpackGrid=(s)=>s.map(unpackBar);
+const barChanged=(a,b)=>JSON.stringify(a)!==JSON.stringify(b);
+function changedSections(p,g){ if(!p) return []; const o=[];
+  for(let i=0;i<g.length;i++) if(barChanged(p[i],g[i])) o.push(i); return o; }
+
+// ---------- url encode ----------
+function b64urlEncode(o){ const b=btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+  return b.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function b64urlDecode(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='=';
+  return JSON.parse(decodeURIComponent(escape(atob(s)))); }
+function siteBase(){ return location.origin==='null'? location.href.split('#')[0]
+                     : location.origin+location.pathname; }
+
+// ---------- state ----------
+let parentChart=null, parentGrid=null, grid, meta;
+
+function presetPulse(bars){ const g=newGrid(bars);
+  for(let bi=0;bi<bars;bi++){ [0,4,8,12].forEach(s=>g[bi][5][s]=1);            // kick
+    [0,2,4,6,8,10,12,14].forEach(s=>g[bi][0][s]=1);                            // c-hat
+    [4,12].forEach(s=>g[bi][3][s]=1); }                                        // snare backbeat
+  g[bars-1][4][8]=1; g[bars-1][1][14]=1; return g; }
+function presetPaper(bars){ const g=newGrid(bars);
+  for(let bi=0;bi<bars;bi++){ g[bi][5][0]=1; g[bi][5][8]=1; g[bi][1][8]=1; g[bi][3][8]=1; } return g; }
+function randomGrid(bars){ const g=newGrid(bars);
+  for(let bi=0;bi<bars;bi++){ [0,4,8,12].forEach(s=>g[bi][5][s]=1);
+    for(let s=0;s<STEPS;s+=2) if(Math.random()<0.7) g[bi][0][s]=1;
+    [4,12].forEach(s=>g[bi][3][s]=1);
+    for(let s=0;s<STEPS;s++) if(Math.random()<0.12) g[bi][Math.floor(Math.random()*LANES)][s]=1; }
+  return g; }
+
+function initFromUrl(){
+  const h=location.hash.slice(1);
+  if(h.startsWith('c=')){
+    try{ parentChart=b64urlDecode(h.slice(2)); parentGrid=unpackGrid(parentChart.s);
+      grid=cloneGrid(parentGrid);
+      meta={title:(parentChart.t||'beat')+' fork', author:'', bpm:parentChart.b||100,
+            depth:(parentChart.d||0)+1, lin:[...(parentChart.lin||[]), parentChart.a||'?'],
+            inst:(parentChart.inst||DEFAULT_KIT).slice()};
+      return;
+    }catch(e){ console.error(e); }
+  }
+  seedMode();
+}
+function seedMode(){ parentChart=null; parentGrid=null; grid=presetPulse(4);
+  meta={title:'untitled', author:'', bpm:100, depth:0, lin:[], inst:DEFAULT_KIT.slice()}; }
+
+// ---------- render ----------
+const $=id=>document.getElementById(id);
+function renderParentInfo(){
+  if(parentChart){ $('parentInfo').innerHTML='<span class="depth">depth '+meta.depth+'</span> '+
+    'forking <b>@'+(parentChart.a||'?')+'</b> の「'+(parentChart.t||'beat')+'」'+
+    (meta.lin.length>1?'  ·  系譜: '+meta.lin.map(x=>'@'+x).join(' → '):'')+
+    '<br><span style="color:var(--accent)">ルール：投稿には最低1小節の改変が必要（ピンク＝あなたが変えた小節）</span>';
+  } else { $('parentInfo').innerHTML='<span class="depth">原曲 (depth 0)</span> あなたが起点。作って「フォークリンク」を配ると、誰かが1小節変えて返してくれる…はず。'; }
+}
+function renderBarsCtl(){
+  $('barsCtl').querySelectorAll('button').forEach(b=>{
+    b.classList.toggle('sel', +b.dataset.bars===grid.length);
+    b.disabled = !!parentChart;  // フォーク中は親と同じ小節数で固定
+    b.style.opacity = parentChart? .4:1;
+  });
+}
+function renderRack(){
+  const r=$('rack'); r.innerHTML='<span style="font-size:12px;color:var(--dim);align-self:center">音色 ↓</span>';
+  for(let li=0;li<LANES;li++){
+    const wrap=document.createElement('label'); wrap.className='laneSel';
+    const sw=document.createElement('span'); sw.className='sw'; sw.style.background=LANE_COLORS[li];
+    const sel=document.createElement('select');
+    INAMES.forEach((nm,idx)=>{ const o=document.createElement('option'); o.value=idx; o.textContent=nm;
+      if(idx===meta.inst[li]) o.selected=true; sel.appendChild(o); });
+    sel.addEventListener('change',()=>{ meta.inst[li]=+sel.value; });
+    sel.addEventListener('mouseup',()=>{ try{INSTR[meta.inst[li]](ac().currentTime+0.01);ac().resume();}catch(e){} });
+    wrap.appendChild(sw); wrap.appendChild(document.createTextNode('L'+(li+1))); wrap.appendChild(sel);
+    r.appendChild(wrap);
+  }
+}
+function renderGrid(){
+  const ch=new Set(changedSections(parentGrid,grid));
+  const root=$('grid'); root.innerHTML='';
+  for(let bi=0;bi<grid.length;bi++){
+    const row=document.createElement('div'); row.className='barRow'+(ch.has(bi)?' changed':'');
+    const lab=document.createElement('div'); lab.className='barLabel';
+    lab.innerHTML='小節 '+(bi+1)+(ch.has(bi)?' <span class="chg">改変</span>':'');
+    row.appendChild(lab);
+    for(let li=0;li<LANES;li++){
+      const lane=document.createElement('div'); lane.className='lane';
+      for(let si=0;si<STEPS;si++){
+        const c=document.createElement('div');
+        c.className='cell'+(si%4===0?' beat':'');
+        if(grid[bi][li][si]){ if(ch.has(bi)) c.classList.add('acc'); else c.style.background=LANE_COLORS[li]; }
+        c.dataset.b=bi; c.dataset.l=li; c.dataset.s=si;
+        c.addEventListener('click',()=>{ grid[bi][li][si]^=1;
+          if(grid[bi][li][si]){ try{INSTR[meta.inst[li]](ac().currentTime+0.01);ac().resume();}catch(e){} }
+          renderGrid(); validate(); });
+        lane.appendChild(c);
+      }
+      row.appendChild(lane);
+    }
+    root.appendChild(row);
+  }
+}
+function validate(){
+  const ch=changedSections(parentGrid,grid), m=$('msg');
+  if(!parentChart){ m.className='msg ok'; m.textContent='原曲モード：好きに作ってフォークリンクを配ろう。'; return true; }
+  const n=grid.length, maxc=Math.max(1,Math.floor(n*MAX_CHANGED_RATIO));
+  if(ch.length===0){ m.className='msg no'; m.textContent='まだ1小節も変えていません（投稿には最低1小節の改変が必要）。'; return false; }
+  if(ch.length>maxc){ m.className='msg no'; m.textContent='変えすぎ（'+ch.length+'/'+n+'小節）＝派生でなく別作品。1小節中心の改変に。'; return false; }
+  m.className='msg ok'; m.textContent='OK：小節 '+ch.map(i=>i+1).join(',')+' を改変したフォーク。リンクをコピーして渡せます。'; return true;
+}
+function reRenderAll(){ renderParentInfo(); renderBarsCtl(); renderRack(); renderGrid(); validate(); }
+
+// ---------- audio transport ----------
+let playing=false, schedTimer=null, rafId=null, startTime=0, curStep=-1;
+function play(){ if(playing) return; ac().resume(); playing=true;
+  const spb=60/meta.bpm/4, totalSteps=grid.length*STEPS; startTime=ac().currentTime+0.06; let next=0;
+  const schedule=()=>{ if(!playing) return; const ahead=ac().currentTime+0.1;
+    while(startTime+next*spb<ahead){ const step=next%totalSteps, bi=Math.floor(step/STEPS), si=step%STEPS, t=startTime+next*spb;
+      for(let li=0;li<LANES;li++) if(grid[bi][li][si]) INSTR[meta.inst[li]](t); next++; }
+    schedTimer=setTimeout(schedule,25); };
+  schedule();
+  const tick=()=>{ if(!playing) return;
+    const step=Math.max(0,Math.floor((ac().currentTime-startTime)/spb))%totalSteps;
+    if(step!==curStep){ curStep=step; highlightPlayhead(step); } rafId=requestAnimationFrame(tick); };
+  tick();
+}
+function stop(){ playing=false; if(schedTimer)clearTimeout(schedTimer); if(rafId)cancelAnimationFrame(rafId);
+  curStep=-1; document.querySelectorAll('.cell.play').forEach(c=>c.classList.remove('play')); }
+function highlightPlayhead(step){ document.querySelectorAll('.cell.play').forEach(c=>c.classList.remove('play'));
+  const bi=Math.floor(step/STEPS), si=step%STEPS;
+  document.querySelectorAll('.cell[data-b="'+bi+'"][data-s="'+si+'"]').forEach(c=>c.classList.add('play')); }
+
+// ---------- share link ----------
+function childChart(){ return {t:meta.title||'beat', a:meta.author||'anon', b:+meta.bpm, n:grid.length,
+  d:meta.depth, lin:meta.lin, inst:meta.inst, s:packGrid(grid)}; }
+function copyLink(){
+  if(!meta.author){ $('author').focus(); flash('先に名前を入れてね'); return; }
+  if(!validate()){ flash('改変ルールを満たしてからコピー'); return; }
+  const url=siteBase()+'#c='+b64urlEncode(childChart());
+  navigator.clipboard.writeText(url).then(()=>flash('フォークリンクをコピーしました！画像と一緒に貼って配ろう'),
+    ()=>prompt('このリンクをコピー:',url));
+}
+function flash(t){ const m=$('msg'); m.className='msg ok'; m.textContent=t; }
+
+// ---------- card PNG ----------
+function drawMini(ctx,bar,x,y,accent){ const cw=6,lh=6;
+  for(let li=0;li<LANES;li++) for(let si=0;si<STEPS;si++){
+    ctx.fillStyle=bar[li][si]?(accent?'#ff5d8f':LANE_COLORS[li]):'#1c2032'; ctx.fillRect(x+si*cw,y+li*lh,cw-1,lh-1); }
+  return [cw*STEPS,lh*LANES]; }
+function makeCard(download){
+  const ch=changedSections(parentGrid,grid), hi=new Set(ch.length?ch:grid.map((_,i)=>i));
+  const cv=$('cv'), ctx=cv.getContext('2d');
+  const W=760, margin=20, headerH=148, laneH=22, footerH=52, bars=grid.length, cols=bars*STEPS, gridTop=headerH;
+  const H=headerH+LANES*laneH+footerH+16, cw=(W-2*margin)/cols;
+  cv.width=W; cv.height=H; ctx.fillStyle='#0f1320'; ctx.fillRect(0,0,W,H); ctx.textBaseline='top';
+  ctx.fillStyle='#e4e8f5'; ctx.font='bold 26px Meiryo,sans-serif'; ctx.fillText(meta.title||'beat',margin,16);
+  ctx.fillStyle='#9aa2b4'; ctx.font='15px Meiryo,sans-serif';
+  const sub=parentChart? ('@'+(meta.author||'anon')+' forked @'+(parentChart.a||'?')+'  ·  depth '+meta.depth+'  ·  '+meta.bpm+' BPM')
+                       : ('原曲 by @'+(meta.author||'anon')+'  ·  '+meta.bpm+' BPM  ·  1小節変えて返してね');
+  ctx.fillText(sub,margin,50);
+  if(ch.length){ const bi=ch[0]; ctx.fillStyle='#9aa2b4'; ctx.font='13px Meiryo,sans-serif'; ctx.fillText('小節 '+(bi+1),margin,80);
+    ctx.fillText('元',margin+70,70); const [w1]=drawMini(ctx,parentGrid[bi],margin+70,86,false);
+    ctx.fillStyle='#e4e8f5'; ctx.font='15px sans-serif'; ctx.fillText('→',margin+70+w1+10,92);
+    ctx.fillStyle='#ff5d8f'; ctx.font='13px Meiryo,sans-serif'; ctx.fillText('改',margin+70+w1+34,70);
+    drawMini(ctx,grid[bi],margin+70+w1+34,86,true); }
+  for(let li=0;li<LANES;li++) for(let col=0;col<cols;col++){ ctx.fillStyle='#1c2032';
+    ctx.fillRect(margin+col*cw,gridTop+li*laneH,cw-1,laneH-1); }
+  for(let bi=0;bi<bars;bi++){ const hot=hi.has(bi); for(let li=0;li<LANES;li++) for(let si=0;si<STEPS;si++) if(grid[bi][li][si]){
+    const col=bi*STEPS+si; ctx.fillStyle=hot?'#ff5d8f':LANE_COLORS[li]; ctx.fillRect(margin+col*cw+1,gridTop+li*laneH+1,cw-2,laneH-2); } }
+  ctx.strokeStyle='#46506e'; for(let bi=0;bi<=bars;bi++){ const lx=margin+bi*STEPS*cw;
+    ctx.beginPath(); ctx.moveTo(lx,gridTop); ctx.lineTo(lx,gridTop+LANES*laneH); ctx.stroke(); }
+  ctx.strokeStyle='#ff5d8f'; ctx.lineWidth=2;
+  hi.forEach(bi=>{ if(parentGrid){ const lx=margin+bi*STEPS*cw; ctx.strokeRect(lx,gridTop-3,STEPS*cw,LANES*laneH+5); } }); ctx.lineWidth=1;
+  const fy=H-footerH+8; ctx.fillStyle='#141928'; ctx.fillRect(0,fy-6,W,footerH+6);
+  ctx.fillStyle='#e4e8f5'; ctx.font='20px Meiryo,sans-serif'; ctx.fillText('fork this beat  ->',margin,fy);
+  ctx.fillStyle='#ff5d8f'; ctx.fillText(siteBase().replace(/^https?:\/\//,''),margin+200,fy);
+  ctx.fillStyle='#9aa2b4'; ctx.font='15px sans-serif'; ctx.fillText('FaultLine',W-110,fy+2);
+  cv.style.display='block';
+  if(download){ const a=document.createElement('a'); a.download='faultline_'+(meta.title||'beat').replace(/\s+/g,'_')+'.png';
+    a.href=cv.toDataURL('image/png'); a.click(); }
+}
+
+// ---------- bars control ----------
+function setBars(n){ if(parentChart) return; const old=grid; grid=newGrid(n);
+  for(let bi=0;bi<n;bi++) if(old[bi]) grid[bi]=old[bi].map(l=>l.slice()); reRenderAll(); }
+
+// ---------- wire ----------
+function syncMetaInputs(){ $('author').value=meta.author; $('title').value=meta.title; $('bpm').value=meta.bpm; }
+function boot(){
+  initFromUrl(); syncMetaInputs(); reRenderAll();
+  $('author').addEventListener('input',e=>meta.author=e.target.value.trim());
+  $('title').addEventListener('input',e=>meta.title=e.target.value);
+  $('bpm').addEventListener('input',e=>meta.bpm=+e.target.value||100);
+  $('play').onclick=play; $('stop').onclick=stop;
+  $('copyLink').onclick=copyLink; $('card').onclick=()=>makeCard(true);
+  $('clearAll').onclick=()=>{ grid=newGrid(grid.length); reRenderAll(); };
+  $('seedA').onclick=()=>{ if(parentChart){flash('フォーク中はpreset不可（原曲を開き直してね）');return;} grid=presetPulse(grid.length); reRenderAll(); };
+  $('seedB').onclick=()=>{ if(parentChart){flash('フォーク中はpreset不可');return;} grid=presetPaper(grid.length); reRenderAll(); };
+  $('rand').onclick=()=>{ if(parentChart){flash('フォーク中はrandom不可');return;} grid=randomGrid(grid.length); reRenderAll(); };
+  $('barsCtl').querySelectorAll('button').forEach(b=>b.onclick=()=>setBars(+b.dataset.bars));
+}
+boot();
+</script>
+</body>
+</html>
