@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sato12307.github.io/faultline/sitemap.xml
